@@ -10,9 +10,13 @@
 
 int main()
 {
+    #ifdef RECORD
     FILE *file_xyz, *file_thermo;
     file_xyz = fopen("trajectory.xyz", "w");
     file_thermo = fopen("thermo.log", "w");
+    fprintf(file_thermo, "# t Temp Pres Epot Etot\n");
+    #endif
+
     double Ekin, Epot, Temp, Pres; // variables macroscopicas
     double Rho, cell_V, cell_L, tail, Etail, Ptail;
     double *rxyz, *vxyz, *fxyz; // variables microscopicas
@@ -27,7 +31,6 @@ int main()
     printf("# Pasos de medición:         %d\n", TRUN - TEQ);
     printf("# (mediciones cada %d pasos)\n", TMES);
     printf("# densidad, volumen, energía potencial media, presión media\n");
-    fprintf(file_thermo, "# t Temp Pres Epot Etot\n");
 
     srand(SEED);
     double t = 0.0, sf;
@@ -46,6 +49,7 @@ int main()
 
         int i = 0;
         sf = cbrt(Rhob / Rho);
+        #pragma GCC unroll 4
         for (int k = 0; k < 3 * N; k++) { // reescaleo posiciones a nueva densidad
             rxyz[k] *= sf;
         }
@@ -57,6 +61,7 @@ int main()
             velocity_verlet(rxyz, vxyz, fxyz, &Epot, &Ekin, &Pres, &Temp, Rho, cell_V, cell_L);
 
             sf = sqrt(T0 / Temp);
+            #pragma GCC unroll 4
             for (int k = 0; k < 3 * N; k++) { // reescaleo de velocidades
                 vxyz[k] *= sf;
             }
@@ -69,6 +74,7 @@ int main()
             velocity_verlet(rxyz, vxyz, fxyz, &Epot, &Ekin, &Pres, &Temp, Rho, cell_V, cell_L);
 
             sf = sqrt(T0 / Temp);
+            #pragma GCC unroll 4
             for (int k = 0; k < 3 * N; k++) { // reescaleo de velocidades
                 vxyz[k] *= sf;
             }
@@ -81,11 +87,13 @@ int main()
                 presm += Pres;
                 mes++;
 
-                fprintf(file_thermo, "%f %f %f %f %f\n", t, Temp, Pres, Epot, Epot + Ekin);
+                #ifdef RECORD
+		        fprintf(file_thermo, "%f %f %f %f %f\n", t, Temp, Pres, Epot, Epot + Ekin);
                 fprintf(file_xyz, "%d\n\n", N);
                 for (int k = 0; k < 3 * N; k += 3) {
                     fprintf(file_xyz, "Ar %e %e %e\n", rxyz[k + 0], rxyz[k + 1], rxyz[k + 2]);
                 }
+                #endif
             }
 
             t += DT;
@@ -99,9 +107,14 @@ int main()
     printf("# ns/day = %f\n", (1.6e-6 * t) / elapsed * 86400);
     //                       ^1.6 fs -> ns       ^sec -> day
 
+    // printf("# Nanosegundos por op = %f\n", (elapsed * 1e9) / );
+    printf("# Interacciones por microsegundo = %f\n", ((long long)N*N*TRUN) / (elapsed * 1e6));
+
+    #ifdef RECORD
     // Cierre de archivos
     fclose(file_thermo);
     fclose(file_xyz);
+    #endif
 
     // Liberacion de memoria
     free(rxyz);
