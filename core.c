@@ -47,17 +47,30 @@ void init_vel(double* vxyz, double* temp, double* ekin)
 
     double sf, sumvx = 0.0, sumvy = 0.0, sumvz = 0.0, sumv2 = 0.0;
 
-    #pragma GCC unroll 4
-    for (int i = 0; i < 3 * N; i += 3) {
+    for (int i = 0; i < 3 * N; i += 12) {
         vxyz[i + 0] = rand() / (double)RAND_MAX - 0.5;
         vxyz[i + 1] = rand() / (double)RAND_MAX - 0.5;
         vxyz[i + 2] = rand() / (double)RAND_MAX - 0.5;
 
-        sumvx += vxyz[i + 0];
-        sumvy += vxyz[i + 1];
-        sumvz += vxyz[i + 2];
-        sumv2 += vxyz[i + 0] * vxyz[i + 0] + vxyz[i + 1] * vxyz[i + 1]
-            + vxyz[i + 2] * vxyz[i + 2];
+        vxyz[i + 3] = rand() / (double)RAND_MAX - 0.5;
+        vxyz[i + 4] = rand() / (double)RAND_MAX - 0.5;
+        vxyz[i + 5] = rand() / (double)RAND_MAX - 0.5;
+
+        vxyz[i + 6] = rand() / (double)RAND_MAX - 0.5;
+        vxyz[i + 7] = rand() / (double)RAND_MAX - 0.5;
+        vxyz[i + 8] = rand() / (double)RAND_MAX - 0.5;
+
+        vxyz[i + 9] = rand() / (double)RAND_MAX - 0.5;
+        vxyz[i + 10] = rand() / (double)RAND_MAX - 0.5;
+        vxyz[i + 11] = rand() / (double)RAND_MAX - 0.5;
+
+        double vx = vxyz[i + 0] + vxyz[i + 3] + vxyz[i + 6] + vxyz[i + 9];
+        double vy = vxyz[i + 1] + vxyz[i + 4] + vxyz[i + 7] + vxyz[i + 10];
+        double vz = vxyz[i + 2] + vxyz[i + 5] + vxyz[i + 8] + vxyz[i + 11];
+        sumvx += vx;
+        sumvy += vy;
+        sumvz += vz;
+        sumv2 += vx * vx + vy * vy + vz * vz;
     }
 
     sumvx /= (double)N;
@@ -67,12 +80,23 @@ void init_vel(double* vxyz, double* temp, double* ekin)
     *ekin = 0.5 * sumv2;
     sf = sqrt(T0 / *temp);
 
-    #pragma GCC unroll 4
-    for (int i = 0; i < 3 * N; i += 3) { // elimina la velocidad del centro de masa
+    for (int i = 0; i < 3 * N; i += 12) { // elimina la velocidad del centro de masa
         // y ajusta la temperatura
         vxyz[i + 0] = (vxyz[i + 0] - sumvx) * sf;
         vxyz[i + 1] = (vxyz[i + 1] - sumvy) * sf;
         vxyz[i + 2] = (vxyz[i + 2] - sumvz) * sf;
+
+        vxyz[i + 3] = (vxyz[i + 0] - sumvx) * sf;
+        vxyz[i + 4] = (vxyz[i + 1] - sumvy) * sf;
+        vxyz[i + 5] = (vxyz[i + 2] - sumvz) * sf;
+
+        vxyz[i + 6] = (vxyz[i + 0] - sumvx) * sf;
+        vxyz[i + 7] = (vxyz[i + 1] - sumvy) * sf;
+        vxyz[i + 8] = (vxyz[i + 2] - sumvz) * sf;
+
+        vxyz[i + 9] = (vxyz[i + 0] - sumvx) * sf;
+        vxyz[i + 10] = (vxyz[i + 1] - sumvy) * sf;
+        vxyz[i + 11] = (vxyz[i + 2] - sumvz) * sf;
     }
 }
 
@@ -95,15 +119,16 @@ void forces(const double* rxyz, double* fxyz, double* epot, double* pres,
 {
     // calcula las fuerzas LJ (12-6)
 
-    #pragma GCC unroll 4
-    for (int i = 0; i < 3 * N; i++) {
-        fxyz[i] = 0.0;
+    for (int i = 0; i < 3 * N; i+=4) {
+        fxyz[i + 0] = 0.0;
+        fxyz[i + 1] = 0.0;
+        fxyz[i + 2] = 0.0;
+        fxyz[i + 3] = 0.0;
     }
     double pres_vir = 0.0;
     double rcut2 = RCUT * RCUT;
     *epot = 0.0;
 
-#ifdef MAN_UNROLL
     for (int i = 0; i < 3 * N; i += 3) {
         
         double xi = rxyz[i + 0];
@@ -303,49 +328,6 @@ void forces(const double* rxyz, double* fxyz, double* epot, double* pres,
             }
         }
     }
-#else
-    for (int i = 0; i < 3 * (N - 1); i += 3) {
-
-        double xi = rxyz[i + 0];
-        double yi = rxyz[i + 1];
-        double zi = rxyz[i + 2];
-
-        for (int j = i + 3; j < 3 * N; j += 3) {
-
-            double xj = rxyz[j + 0];
-            double yj = rxyz[j + 1];
-            double zj = rxyz[j + 2];
-
-            // distancia mínima entre r_i y r_j
-            double rx = xi - xj;
-            rx = minimum_image(rx, L);
-            double ry = yi - yj;
-            ry = minimum_image(ry, L);
-            double rz = zi - zj;
-            rz = minimum_image(rz, L);
-
-            double rij2 = rx * rx + ry * ry + rz * rz;
-
-            if (rij2 <= rcut2) {
-                double r2inv = 1.0 / rij2;
-                double r6inv = r2inv * r2inv * r2inv;
-
-                double fr = 24.0 * r2inv * r6inv * (2.0 * r6inv - 1.0);
-
-                fxyz[i + 0] += fr * rx;
-                fxyz[i + 1] += fr * ry;
-                fxyz[i + 2] += fr * rz;
-
-                fxyz[j + 0] -= fr * rx;
-                fxyz[j + 1] -= fr * ry;
-                fxyz[j + 2] -= fr * rz;
-
-                *epot += 4.0 * r6inv * (r6inv - 1.0) - ECUT;
-                pres_vir += fr * rij2;
-            }
-        }
-    }
-#endif
     pres_vir /= (V * 3.0);
     *pres = *temp * rho + pres_vir;
 }
@@ -368,7 +350,6 @@ void velocity_verlet(double* rxyz, double* vxyz, double* fxyz, double* epot,
                      const double V, const double L)
 {
 
-    #pragma GCC unroll 4
     for (int i = 0; i < 3 * N; i += 3) { // actualizo posiciones
         rxyz[i + 0] += vxyz[i + 0] * DT + 0.5 * fxyz[i + 0] * DT * DT;
         rxyz[i + 1] += vxyz[i + 1] * DT + 0.5 * fxyz[i + 1] * DT * DT;
@@ -386,7 +367,6 @@ void velocity_verlet(double* rxyz, double* vxyz, double* fxyz, double* epot,
     forces(rxyz, fxyz, epot, pres, temp, rho, V, L); // actualizo fuerzas
 
     double sumv2 = 0.0;
-    #pragma GCC unroll 4
     for (int i = 0; i < 3 * N; i += 3) { // actualizo velocidades
         vxyz[i + 0] += 0.5 * fxyz[i + 0] * DT;
         vxyz[i + 1] += 0.5 * fxyz[i + 1] * DT;

@@ -1,15 +1,11 @@
 function run() {
     echo -e "\nPerformance de tiny_md con N=$1 particulas:\n" >> results.txt
     make -B CFLAGS="-O3 -DN=$1 -ffast-math -DMAN_UNROLL" CC=icx tiny_md
-    perf stat -x ", " -e fp_ret_sse_avx_ops.all,instructions,task-clock ./tiny_md >> /dev/null 2>> results.txt
+    /usr/bin/time ./tiny_md >> /dev/null 2>> results.txt
 }
 
 echo -e "\nBenchmark $(date +%s):" >> results.txt
 
-run 8788
-exit
-run 5324
-run 6912
 run 4    # m = 1
 run 32   # m = 2
 run 108  # m = 3
