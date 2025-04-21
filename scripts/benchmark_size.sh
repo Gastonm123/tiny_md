@@ -1,15 +1,20 @@
+FLAGS="-O3 -ffast-math -flto -march=native -funroll-loops"
+
 function run() {
-    echo -e "\nPerformance de tiny_md con N=$1 particulas:\n" >> results.txt
-    make -B CFLAGS="-O3 -DN=$1 -ffast-math -DMAN_UNROLL" CC=icx tiny_md
-    perf stat -x ", " -e fp_ret_sse_avx_ops.all,instructions,task-clock ./tiny_md >> /dev/null 2>> results.txt
+    make -B CFLAGS="$FLAGS -DN=$1" CC=gcc tiny_md
+    RES=$(perf stat -x ", " -e fp_ret_sse_avx_ops.all,instructions,task-clock ./tiny_md 2>&1 >/dev/null | awk -F', ' '{print $1}' | paste -sd "," -)
+    echo "gcc,$1,$RES" >> results.txt
+    make -B CFLAGS="$FLAGS -DN=$1" CC=clang tiny_md
+    RES=$(perf stat -x ", " -e fp_ret_sse_avx_ops.all,instructions,task-clock ./tiny_md 2>&1 >/dev/null | awk -F', ' '{print $1}' | paste -sd "," -)
+    echo "clang,$1,$RES" >> results.txt
+    make -B CFLAGS="$FLAGS -DN=$1" CC=icx tiny_md
+    RES=$(perf stat -x ", " -e fp_ret_sse_avx_ops.all,instructions,task-clock ./tiny_md 2>&1 >/dev/null | awk -F', ' '{print $1}' | paste -sd "," -)
+    echo "icx,$1,$RES" >> results.txt
 }
 
 echo -e "\nBenchmark $(date +%s):" >> results.txt
+echo "Compiler,Size,Flop,Instructions,Time" >> results.txt
 
-run 8788
-exit
-run 5324
-run 6912
 run 4    # m = 1
 run 32   # m = 2
 run 108  # m = 3
@@ -17,6 +22,4 @@ run 256  # m = 4
 run 500  # m = 5
 run 864  # m = 6
 run 1372 # m = 7
-run 2048 # m = 8
-run 2916
-run 4000
+

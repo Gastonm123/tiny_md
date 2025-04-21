@@ -5,6 +5,7 @@ function run() {
 }
 
 echo -e "\nBenchmark $(date +%s):" >> results.txt
+echo "Compiler,Flags,Flop,Instructions,Time" >> results.txt
 
 declare -a flags=("-O0" "-O1" "-O2" "-O3 -ffast-math")
 declare -a compi=("gcc" "clang" "icx")
