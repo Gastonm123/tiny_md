@@ -8,10 +8,10 @@
 #include <stdlib.h>
 
 // variables globales
-static double Ekin, Epot, Temp, Pres; // variables macroscopicas
-static double Rho, V, box_size, tail, Etail, Ptail;
-static double *rxyz, *vxyz, *fxyz; // variables microscopicas
-static double Rhob, sf, epotm, presm;
+static float Ekin, Epot, Temp, Pres; // variables macroscopicas
+static float Rho, V, box_size, tail, Etail, Ptail;
+static float *rxyz, *vxyz, *fxyz; // variables microscopicas
+static float Rhob, sf, epotm, presm;
 static int switcher = 0, frames = 0, mes;
 
 
@@ -44,14 +44,14 @@ static void post_display(void)
 
 static void draw_atoms(void)
 {
-    double glL = cbrt((double)N / (RHOI - 0.8));
+    float glL = cbrt((float)N / (RHOI - 0.8));
 
-    double resize = 0.5;
+    float resize = 0.5;
 
     // grafico las lineas que delimitan la caja de simulación
     glBegin(GL_LINES);
 
-    double box_line = resize * (box_size / glL);
+    float box_line = resize * (box_size / glL);
     glColor3d(0.0, 0.0, 1.0);
 
     glVertex3d(0.0, 0.0, 0.0);
@@ -99,9 +99,9 @@ static void draw_atoms(void)
 
     int di;
 
-    double dx;
-    double dy;
-    double dz;
+    float dx;
+    float dy;
+    float dz;
 
     for (di = 0; di < 3 * N; di += 3) {
         dx = (rxyz[di + 0] / glL) * resize;
@@ -132,10 +132,10 @@ static void idle_func(void)
     if (switcher == 3) {
 
         Rho = RHOI;
-        V = (double)N / Rho;
+        V = (float)N / Rho;
         box_size = cbrt(V);
         tail = 16.0 * M_PI * Rho * ((2.0 / 3.0) * pow(RCUT, -9) - pow(RCUT, -3)) / 3.0;
-        Etail = tail * (double)N;
+        Etail = tail * (float)N;
         Ptail = tail * Rho;
 
         init_pos(rxyz, Rho);
@@ -146,17 +146,17 @@ static void idle_func(void)
 
     } else if (switcher == 2) { // imprimo propiedades en la terminal y cambio la densidad
 
-        printf("%f\t%f\t%f\t%f\n", Rho, V, epotm / (double)mes,
-               presm / (double)mes);
+        printf("%f\t%f\t%f\t%f\n", Rho, V, epotm / (float)mes,
+               presm / (float)mes);
 
         Rhob = Rho;
         Rho = Rho - 0.1;
 
 
-        V = (double)N / Rho;
+        V = (float)N / Rho;
         box_size = cbrt(V);
         tail = 16.0 * M_PI * Rho * ((2.0 / 3.0) * pow(RCUT, -9) - pow(RCUT, -3)) / 3.0;
-        Etail = tail * (double)N;
+        Etail = tail * (float)N;
         Ptail = tail * Rho;
 
         sf = cbrt(Rhob / Rho);
@@ -233,7 +233,7 @@ static void display_func(void)
 
 static void open_glut_window(void)
 {
-    glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE);
+    glutInitDisplayMode(GLUT_RGBA); // GLUT_DOUBLE
 
     glutInitWindowPosition(0, 0);
     glutInitWindowSize(win_x, win_y);
@@ -264,19 +264,19 @@ int main(int argc, char** argv)
 
     glutInit(&argc, argv);
 
-    rxyz = (double*)malloc(3 * N * sizeof(double));
-    vxyz = (double*)malloc(3 * N * sizeof(double));
-    fxyz = (double*)malloc(3 * N * sizeof(double));
+    rxyz = (float*)malloc(3 * N * sizeof(float));
+    vxyz = (float*)malloc(3 * N * sizeof(float));
+    fxyz = (float*)malloc(3 * N * sizeof(float));
 
     // parametros iniciales para que los pueda usar (antes de modificar)
     // `idle_func`
     srand(SEED);
     Rho = RHOI;
     Rhob = Rho;
-    V = (double)N / Rho;
+    V = (float)N / Rho;
     box_size = cbrt(V);
     tail = 16.0 * M_PI * Rho * ((2.0 / 3.0) * pow(RCUT, -9) - pow(RCUT, -3)) / 3.0;
-    Etail = tail * (double)N;
+    Etail = tail * (float)N;
     Ptail = tail * Rho;
 
     init_pos(rxyz, Rho);

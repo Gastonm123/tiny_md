@@ -1,12 +1,12 @@
 #ifndef CORE_H
 #define CORE_H
 
-void init_pos(double* rxyz, const double rho);
-void init_vel(double* vxyz, double* temp, double* ekin);
-void forces(const double* rxyz, double* fxyz, double* epot, double* pres,
-            const double* temp, const double rho, const double V, const double L);
-void velocity_verlet(double* rxyz, double* vxyz, double* fxyz, double* epot,
-                     double* ekin, double* pres, double* temp, const double rho,
-                     const double V, const double L);
+void init_pos(float* rxyz, const float rho);
+void init_vel(float* vxyz, float* temp, float* ekin);
+void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
+            const float* temp, const float rho, const float V, const float L);
+void velocity_verlet(float* rxyz, float* vxyz, float* fxyz, float* epot,
+                     float* ekin, float* pres, float* temp, const float rho,
+                     const float V, const float L);
 
 #endif

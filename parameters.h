@@ -20,19 +20,19 @@
 #endif
 
 #ifndef T0 // isoterma
-#define T0 2.0
+#define T0 2.0f
 #endif
 
 #ifndef RHOI // densidad inicial
-#define RHOI 1.2
+#define RHOI 1.2f
 #endif
 
 #ifndef RCUT // radio de corte
-#define RCUT 2.5
+#define RCUT 2.5f
 #endif
 
 #ifndef DT // paso temporal ~ 1.6 fs para el Ar
-#define DT 0.005
+#define DT 0.005f
 #endif
 
 #ifndef TEQ // pasos de equilibracion
