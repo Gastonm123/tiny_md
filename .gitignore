@@ -1,5 +1,9 @@
 tiny_md
 viz
 *.o
+*.txt
+*.csv
+*.log
+*.xyz
 .depend
 
