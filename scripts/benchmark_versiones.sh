@@ -1,4 +1,4 @@
-FLAGS="-O3 -ffast-math -flto -march=native -funroll-loops"
+FLAGS="-O3 -march=native -funroll-loops -ftree-vectorize"
 
 function run() {
     make -B CFLAGS="$FLAGS -DN=$1" CC=gcc tiny_md
@@ -15,6 +15,7 @@ function run() {
 function benchmark_version() {
     git checkout $1
     echo -e "\nBenchmark $(date +%s): ($(git log -1 --pretty=format:%s $1))" >> results.txt
+    echo "Flags: $FLAGS" >> results.txt
     echo "Compiler,Size,Flop,Instructions,Time" >> results.txt
 
     run 4    # m = 1
@@ -26,6 +27,6 @@ function benchmark_version() {
     run 1372 # m = 7
 }
 
-benchmark_version 5a12119401adb7e17644ba3b09f556cabd3328a7
+benchmark_version a6e674d460742adfa173203871823e2b1b901d67
 benchmark_version cbd68b9a16958fb8f7f2d23dcedcd543a03faaab
 benchmark_version e28597ce83e89382d4e8b117da24371c1e9a100d

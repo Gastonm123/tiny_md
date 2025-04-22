@@ -1,4 +1,4 @@
-FLAGS="-O3 -ffast-math -march=native -flto -funroll-loops -ftree-vectorize"
+FLAGS="-O3 -ffast-math -march=native -funroll-loops -ftree-vectorize"
 
 function run() {
     make -B CFLAGS="$FLAGS -DN=$1" CC=gcc tiny_md
