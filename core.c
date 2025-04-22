@@ -6,6 +6,10 @@
 
 #define ECUT (4.0f * (powf(RCUT, -12) - powf(RCUT, -6)))
 
+#define X_OFF 0
+#define Y_OFF N
+#define Z_OFF (2*N)
+
 static inline int myrand(int *state) {
     int x = *state;
     x ^= x << 13;
@@ -20,7 +24,7 @@ void init_pos(float* rxyz, const float rho)
     // inicialización de las posiciones de los átomos en un cristal FCC
 
     float a = cbrtf(4.0f / rho);
-    int nucells = ceilf(cbrt((float)N / 4.0f));
+    int nucells = ceilf(cbrtf((float)N / 4.0f));
     int idx = 0;
 
     for (int i = 0; i < nucells; i++) {
@@ -29,23 +33,23 @@ void init_pos(float* rxyz, const float rho)
                 // se pueden tomar de a cuatro puntos en tres vectores
                 // y con una multiplicacion se termina
 
-                rxyz[idx + 0] = i * a; // x
-                rxyz[idx + 1] = j * a; // y
-                rxyz[idx + 2] = k * a; // z
+                rxyz[X_OFF + idx + 0] = i * a; // x
+                rxyz[Y_OFF + idx + 0] = j * a; // y
+                rxyz[Z_OFF + idx + 0] = k * a; // z
                     // del mismo átomo
-                rxyz[idx + 3] = (i + 0.5f) * a;
-                rxyz[idx + 4] = (j + 0.5f) * a;
-                rxyz[idx + 5] = k * a;
+                rxyz[X_OFF + idx + 1] = (i + 0.5f) * a;
+                rxyz[Y_OFF + idx + 1] = (j + 0.5f) * a;
+                rxyz[Z_OFF + idx + 1] = k * a;
 
-                rxyz[idx + 6] = (i + 0.5f) * a;
-                rxyz[idx + 7] = j * a;
-                rxyz[idx + 8] = (k + 0.5f) * a;
+                rxyz[X_OFF + idx + 2] = (i + 0.5f) * a;
+                rxyz[Y_OFF + idx + 2] = j * a;
+                rxyz[Z_OFF + idx + 2] = (k + 0.5f) * a;
 
-                rxyz[idx + 9] = i * a;
-                rxyz[idx + 10] = (j + 0.5f) * a;
-                rxyz[idx + 11] = (k + 0.5f) * a;
+                rxyz[X_OFF + idx + 3] = i * a;
+                rxyz[Y_OFF + idx + 3] = (j + 0.5f) * a;
+                rxyz[Z_OFF + idx + 3] = (k + 0.5f) * a;
 
-                idx += 12;
+                idx += 4;
             }
         }
     }
@@ -59,18 +63,16 @@ void init_vel(float* vxyz, float* temp, float* ekin)
     float sf, sumvx = 0.0f, sumvy = 0.0f, sumvz = 0.0f, sumv2 = 0.0f;
     int state = SEED;
 
-    for (int i = 0; i < 3 * N; i += 12) {
-        for (int d = 0; d < 4; ++d) {
-            vxyz[i+3*d+0] = myrand(&state) / (float)RAND_MAX - 0.5f;
-            vxyz[i+3*d+1] = myrand(&state) / (float)RAND_MAX - 0.5f;
-            vxyz[i+3*d+2] = myrand(&state) / (float)RAND_MAX - 0.5f;
+    for (int i = 0; i < N; ++i) {
+        vxyz[X_OFF + i] = myrand(&state) / (float)RAND_MAX - 0.5f;
+        vxyz[Y_OFF + i] = myrand(&state) / (float)RAND_MAX - 0.5f;
+        vxyz[Z_OFF + i] = myrand(&state) / (float)RAND_MAX - 0.5f;
 
-            sumvx += vxyz[i+3*d+0];
-            sumvy += vxyz[i+3*d+1];
-            sumvz += vxyz[i+3*d+2];
-            sumv2 += vxyz[i+3*d+0] * vxyz[i+3*d+0] + vxyz[i+3*d+1] * vxyz[i+3*d+1]
-                + vxyz[i+3*d+2] * vxyz[i+3*d+2];
-        }
+        sumvx += vxyz[X_OFF + i];
+        sumvy += vxyz[Y_OFF + i];
+        sumvz += vxyz[Z_OFF + i];
+        sumv2 += vxyz[X_OFF + i] * vxyz[X_OFF + i] + vxyz[Y_OFF + i] * vxyz[Y_OFF + i]
+            + vxyz[Z_OFF + i] * vxyz[Z_OFF + i];
     }
 
     sumvx /= (float)N;
@@ -80,13 +82,11 @@ void init_vel(float* vxyz, float* temp, float* ekin)
     *ekin = 0.5f * sumv2;
     sf = sqrtf(T0 / *temp);
 
-    for (int i = 0; i < 3 * N; i += 12) { // elimina la velocidad del centro de masa
+    for (int i = 0; i < N; ++i) { // elimina la velocidad del centro de masa
         // y ajusta la temperatura
-        for (int d = 0; d < 4; ++d) {
-            vxyz[i+3*d+0] = (vxyz[i+3*d+0] - sumvx) * sf;
-            vxyz[i+3*d+1] = (vxyz[i+3*d+1] - sumvy) * sf;
-            vxyz[i+3*d+2] = (vxyz[i+3*d+2] - sumvz) * sf;
-        }
+        vxyz[X_OFF + i] = (vxyz[X_OFF + i] - sumvx) * sf;
+        vxyz[Y_OFF + i] = (vxyz[Y_OFF + i] - sumvy) * sf;
+        vxyz[Z_OFF + i] = (vxyz[Z_OFF + i] - sumvz) * sf;
     }
 }
 
@@ -103,7 +103,6 @@ static float minimum_image(float cordi, const float cell_length)
     return cordi;
 }
 
-
 void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
             const float* temp, const float rho, const float V, const float L)
 {
@@ -118,26 +117,16 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     float rcut2 = RCUT * RCUT;
     *epot = 0.0f;
 
-    for (int i = 0; i < 3 * (N - 1); i += 3) {
+    for (int i = 0; i < N - 1; ++i) {
 
-        float xi = rxyz[i + 0];
-        float yi = rxyz[i + 1];
-        float zi = rxyz[i + 2];
+        float xi = rxyz[X_OFF + i];
+        float yi = rxyz[Y_OFF + i];
+        float zi = rxyz[Z_OFF + i];
 
-        for (int j = i + 3; j < 3 * N; j += 3) {
-
-            /*
-            if (j + 3 * 7 < N) {
-                // cargar ocho puntos xj, yj, zj distintos en vectores
-                // cargar ocho copias de xi, yi, zi en vectores
-
-                j += 21;
-            }
-            */
-
-            float xj = rxyz[j + 0];
-            float yj = rxyz[j + 1];
-            float zj = rxyz[j + 2];
+        for (int j = i + 1; j < N; ++j) {
+            float xj = rxyz[X_OFF + j];
+            float yj = rxyz[Y_OFF + j];
+            float zj = rxyz[Z_OFF + j];
 
             // distancia mínima entre r_i y r_j
             float rx = xi - xj;
@@ -155,13 +144,13 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
 
                 float fr = 24.0f * r2inv * r6inv * (2.0f * r6inv - 1.0f);
 
-                fxyz[i + 0] += fr * rx;
-                fxyz[i + 1] += fr * ry;
-                fxyz[i + 2] += fr * rz;
+                fxyz[X_OFF + i] += fr * rx;
+                fxyz[Y_OFF + i] += fr * ry;
+                fxyz[Z_OFF + i] += fr * rz;
 
-                fxyz[j + 0] -= fr * rx;
-                fxyz[j + 1] -= fr * ry;
-                fxyz[j + 2] -= fr * rz;
+                fxyz[X_OFF + j] -= fr * rx;
+                fxyz[Y_OFF + j] -= fr * ry;
+                fxyz[Z_OFF + j] -= fr * rz;
 
                 *epot += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
                 pres_vir += fr * rij2;
@@ -190,32 +179,30 @@ void velocity_verlet(float* rxyz, float* vxyz, float* fxyz, float* epot,
                      const float V, const float L)
 {
 
-    for (int i = 0; i < 3 * N; i += 3) { // actualizo posiciones
-        rxyz[i + 0] += vxyz[i + 0] * DT + 0.5f * fxyz[i + 0] * DT * DT;
-        rxyz[i + 1] += vxyz[i + 1] * DT + 0.5f * fxyz[i + 1] * DT * DT;
-        rxyz[i + 2] += vxyz[i + 2] * DT + 0.5f * fxyz[i + 2] * DT * DT;
+    for (int i = 0; i < N; ++i) { // actualizo posiciones
+        rxyz[X_OFF + i] += vxyz[X_OFF + i] * DT + 0.5f * fxyz[X_OFF + i] * DT * DT;
+        rxyz[Y_OFF + i] += vxyz[Y_OFF + i] * DT + 0.5f * fxyz[Y_OFF + i] * DT * DT;
+        rxyz[Z_OFF + i] += vxyz[Z_OFF + i] * DT + 0.5f * fxyz[Z_OFF + i] * DT * DT;
 
-        rxyz[i + 0] = pbc(rxyz[i + 0], L);
-        rxyz[i + 1] = pbc(rxyz[i + 1], L);
-        rxyz[i + 2] = pbc(rxyz[i + 2], L);
+        rxyz[X_OFF + i] = pbc(rxyz[X_OFF + i], L);
+        rxyz[Y_OFF + i] = pbc(rxyz[Y_OFF + i], L);
+        rxyz[Z_OFF + i] = pbc(rxyz[Z_OFF + i], L);
 
-        vxyz[i + 0] += 0.5f * fxyz[i + 0] * DT;
-        vxyz[i + 1] += 0.5f * fxyz[i + 1] * DT;
-        vxyz[i + 2] += 0.5f * fxyz[i + 2] * DT;
+        vxyz[X_OFF + i] += 0.5f * fxyz[X_OFF + i] * DT;
+        vxyz[Y_OFF + i] += 0.5f * fxyz[Y_OFF + i] * DT;
+        vxyz[Z_OFF + i] += 0.5f * fxyz[Z_OFF + i] * DT;
     }
 
     forces(rxyz, fxyz, epot, pres, temp, rho, V, L); // actualizo fuerzas
 
     float sumv2 = 0.0f;
-    for (int i = 0; i < 3 * N; i += 12) { // actualizo velocidades
-        for (int d = 0; d < 4; ++d) {
-            vxyz[i+3*d+0] += 0.5f * fxyz[i+3*d+0] * DT;
-            vxyz[i+3*d+1] += 0.5f * fxyz[i+3*d+1] * DT;
-            vxyz[i+3*d+2] += 0.5f * fxyz[i+3*d+2] * DT;
-    
-            sumv2 += vxyz[i+3*d+0] * vxyz[i+3*d+0] + vxyz[i+3*d+1] * vxyz[i+3*d+1]
-                + vxyz[i+3*d+2] * vxyz[i+3*d+2];
-        }
+    for (int i = 0; i < N; ++i) { // actualizo velocidades
+        vxyz[X_OFF + i] += 0.5f * fxyz[X_OFF + i] * DT;
+        vxyz[Y_OFF + i] += 0.5f * fxyz[Y_OFF + i] * DT;
+        vxyz[Z_OFF + i] += 0.5f * fxyz[Z_OFF + i] * DT;
+
+        sumv2 += vxyz[X_OFF + i] * vxyz[X_OFF + i] + vxyz[Y_OFF + i] * vxyz[Y_OFF + i]
+            + vxyz[Z_OFF + i] * vxyz[Z_OFF + i];
     }
 
     *ekin = 0.5f * sumv2;

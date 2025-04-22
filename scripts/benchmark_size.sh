@@ -1,4 +1,4 @@
-FLAGS="-O3 -ffast-math -flto -march=native -funroll-loops"
+FLAGS="-O3 -ffast-math -march=native -flto -funroll-loops -ftree-vectorize"
 
 function run() {
     make -B CFLAGS="$FLAGS -DN=$1" CC=gcc tiny_md
@@ -13,6 +13,7 @@ function run() {
 }
 
 echo -e "\nBenchmark $(date +%s):" >> results.txt
+echo "Flags: $FLAGS" >> results.txt
 echo "Compiler,Size,Flop,Instructions,Time" >> results.txt
 
 run 4    # m = 1

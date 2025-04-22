@@ -35,7 +35,6 @@ int main(int argc, char **argv)
     printf("# (mediciones cada %d pasos)\n", TMES);
     printf("# densidad, volumen, energía potencial media, presión media\n");
 
-    srand(SEED);
     float t = 0.0f, sf;
     float Rhob;
     Rho = RHOI;
@@ -91,7 +90,7 @@ int main(int argc, char **argv)
                     fprintf(file_thermo, "%f %f %f %f %f\n", t, Temp, Pres, Epot, Epot + Ekin);
                     fprintf(file_xyz, "%d\n\n", N);
                     for (int k = 0; k < 3 * N; k += 3) {
-                        fprintf(file_xyz, "Ar %e %e %e\n", rxyz[k + 0], rxyz[k + 1], rxyz[k + 2]);
+                        fprintf(file_xyz, "Ar %e %e %e\n", rxyz[k + 0], rxyz[k + N], rxyz[k + 2*N]);
                     }
                 }
             }

@@ -105,8 +105,8 @@ static void draw_atoms(void)
 
     for (di = 0; di < 3 * N; di += 3) {
         dx = (rxyz[di + 0] / glL) * resize;
-        dy = (rxyz[di + 1] / glL) * resize;
-        dz = (rxyz[di + 2] / glL) * resize;
+        dy = (rxyz[di + N] / glL) * resize;
+        dz = (rxyz[di + 2*N] / glL) * resize;
 
         glColor3d(0.0, 1.0, 0.0);
         glVertex3d(dx, dy, dz);
