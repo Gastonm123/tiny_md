@@ -62,7 +62,7 @@ void init_vel(float* vxyz, float* temp, float* ekin)
     // inicialización de velocidades aleatorias
 
     float sf, sumvx = 0.0f, sumvy = 0.0f, sumvz = 0.0f, sumv2 = 0.0f;
-    int state = 10;
+    int state = SEED;
 
     for (int i = 0; i < N; ++i) {
         vxyz[X_OFF + i] = myrand(&state) / (float)RAND_MAX - 0.5f;
@@ -146,6 +146,9 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
         float yi = rxyz[Y_OFF + i];
         float zi = rxyz[Z_OFF + i];
 
+        __m256 acc_fx, acc_fy, acc_fz, acc_epot, acc_pres_vir;
+        acc_fx = acc_fy = acc_fz = acc_epot = acc_pres_vir = _mm256_setzero_ps();
+
         for (int j = i + 1; j < N; ++j) {
 
             if (j + 7 < N) {
@@ -194,9 +197,9 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 ry = _mm256_mul_ps(fr, ry);
                 rz = _mm256_mul_ps(fr, rz);
 
-                fxyz[X_OFF + i] += reduce(_mm256_and_ps(rx, mask));
-                fxyz[Y_OFF + i] += reduce(_mm256_and_ps(ry, mask));
-                fxyz[Z_OFF + i] += reduce(_mm256_and_ps(rz, mask));
+                acc_fx = _mm256_add_ps(acc_fx, _mm256_and_ps(rx, mask));
+                acc_fy = _mm256_add_ps(acc_fy, _mm256_and_ps(ry, mask));
+                acc_fz = _mm256_add_ps(acc_fz, _mm256_and_ps(rz, mask));
 
                 fxj = _mm256_loadu_ps(&fxyz[X_OFF + j]);
                 fxj = _mm256_sub_ps(fxj, _mm256_and_ps(rx, mask));
@@ -215,10 +218,10 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 aux = _mm256_sub_ps(
                     _mm256_mul_ps(c4, _mm256_mul_ps(r6inv, _mm256_sub_ps(r6inv, c1))),
                     _mm256_set1_ps(ECUT));
-                *epot += reduce(_mm256_and_ps(mask, aux));
+                acc_epot = _mm256_add_ps(acc_epot, _mm256_and_ps(mask, aux));
 
                 aux = _mm256_mul_ps(fr, rij2);
-                pres_vir += reduce(_mm256_and_ps(mask, aux));
+                acc_pres_vir = _mm256_add_ps(acc_pres_vir, _mm256_and_ps(mask, aux));
                 
                 // omitir los siguientes 7 atomos
                 j += 7;
@@ -258,6 +261,12 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
             }
 
         }
+
+        fxyz[X_OFF + i] += reduce(acc_fx);
+        fxyz[Y_OFF + i] += reduce(acc_fy);
+        fxyz[Z_OFF + i] += reduce(acc_fz);
+        *epot           += reduce(acc_epot);
+        pres_vir        += reduce(acc_pres_vir);
     }
     pres_vir /= (V * 3.0f);
     *pres = *temp * rho + pres_vir;
