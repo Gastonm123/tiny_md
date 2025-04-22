@@ -62,7 +62,7 @@ void init_vel(float* vxyz, float* temp, float* ekin)
     // inicialización de velocidades aleatorias
 
     float sf, sumvx = 0.0f, sumvy = 0.0f, sumvz = 0.0f, sumv2 = 0.0f;
-    int state = SEED;
+    int state = 10;
 
     for (int i = 0; i < N; ++i) {
         vxyz[X_OFF + i] = myrand(&state) / (float)RAND_MAX - 0.5f;
@@ -104,32 +104,35 @@ static float minimum_image(float cordi, const float cell_length)
     return cordi;
 }
 
-static __m256 minimum_image256(__m256 cordi, const __m256 cell_length)
+#include <assert.h>
+
+static __m256 minimum_image256(__m256 cordi, const float cell_length)
 {
     // imagen más cercana
-    __m256 minus_half = _mm256_set1_ps(-0.5f);
-    __m256 half = _mm256_set1_ps(0.5f);
+    __m256 minus_half = _mm256_set1_ps(-0.5f * cell_length);
+    __m256 half = _mm256_set1_ps(0.5f * cell_length);
 
-    __m256 aux, add, sub;
-    aux = _mm256_mul_ps(cell_length, minus_half);
-    add = _mm256_cmp_ps(cordi, aux, _CMP_LE_OS);
+    __m256 add, sub;
+    add = _mm256_cmp_ps(cordi, minus_half, _CMP_LE_OS);
+    sub = _mm256_cmp_ps(cordi, half, _CMP_GT_OS);
 
-    aux = _mm256_mul_ps(cell_length, half);
-    sub = _mm256_cmp_ps(cordi, aux, _CMP_GT_OS);
-    sub = _mm256_andnot_ps(add, sub);
-
-    cordi = _mm256_add_ps(cordi, _mm256_and_ps(add, cell_length));
-    cordi = _mm256_sub_ps(cordi, _mm256_and_ps(sub, cell_length));
-    
+    cordi = _mm256_add_ps(cordi, _mm256_and_ps(add, _mm256_set1_ps(cell_length)));
+    cordi = _mm256_sub_ps(cordi, _mm256_and_ps(sub, _mm256_set1_ps(cell_length)));
     return cordi;
 }
 
-static float reduce(__m256 v)
+static float reduce1(__m256 v)
 {
+    float s = 0.0f;
+    for (int k = 0; k < 8; k++)
+        s += v[k];
+    return s;
     // suma horizontal del vector
 	__m256 psum = _mm256_hadd_ps(_mm256_hadd_ps(v,v), _mm256_hadd_ps(v,v));
 	return _mm_cvtss_f32(_mm_add_ps(_mm256_extractf128_ps(psum,0), _mm256_extractf128_ps(psum,1)));
 }
+
+#define max(a, b) (a>b?a:b)
 
 void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
             const float* temp, const float rho, const float V, const float L)
@@ -158,21 +161,29 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 __m256 xj, yj, zj, vxi, vyi, vzi,
                     rx, ry, rz;
 
-                xj = _mm256_loadu_ps(&rxyz[X_OFF+i]);
-                yj = _mm256_loadu_ps(&rxyz[Y_OFF+i]);
-                zj = _mm256_loadu_ps(&rxyz[Z_OFF+i]);
+                xj = _mm256_loadu_ps(&rxyz[X_OFF+j]);
+                yj = _mm256_loadu_ps(&rxyz[Y_OFF+j]);
+                zj = _mm256_loadu_ps(&rxyz[Z_OFF+j]);
 
-                vxi = _mm256_broadcast_ss(&xi);
-                vyi = _mm256_broadcast_ss(&yi);
-                vzi = _mm256_broadcast_ss(&zi);
+                vxi = _mm256_set1_ps(rxyz[X_OFF + i]);
+                vyi = _mm256_set1_ps(rxyz[Y_OFF + i]);
+                vzi = _mm256_set1_ps(rxyz[Z_OFF + i]);
 
                 rx = _mm256_sub_ps(vxi, xj);
                 ry = _mm256_sub_ps(vyi, yj);
                 rz = _mm256_sub_ps(vzi, zj);
 
-                rx = minimum_image256(rx, _mm256_set1_ps(L));
-                ry = minimum_image256(ry, _mm256_set1_ps(L));
-                rz = minimum_image256(rz, _mm256_set1_ps(L));
+                rx = minimum_image256(rx, L);
+                ry = minimum_image256(ry, L);
+                rz = minimum_image256(rz, L);
+                
+                for (int k = 0; k < 8; k++) {
+                    float xj = rxyz[X_OFF + j + k];
+                    // distancia mínima entre r_i y r_j
+                    float srx = xi - xj;
+                    srx = minimum_image(srx, L);
+                    assert(fabs(srx - rx[k]) < 1e-6);
+                }
 
                 // calcular rij2, r2inv, r6inv, fr
                 __m256 rij2, c24, c4, c2, c1, r2inv, r6inv, fr;
@@ -193,14 +204,43 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 
                 // sumar fr * rx en el atomo i y restar en el atomo j
                 __m256 mask;
-                mask = _mm256_cmp_ps(rij2, _mm256_set1_ps(rcut2), _CMP_LE_OS);
+                __m256 rcut2_256 = _mm256_set1_ps(rcut2);
+                mask = _mm256_cmp_ps(rij2, rcut2_256, _CMP_LE_OS);
                 rx = _mm256_mul_ps(fr, rx);
                 ry = _mm256_mul_ps(fr, ry);
                 rz = _mm256_mul_ps(fr, rz);
 
-                fxyz[X_OFF + i] += reduce(_mm256_and_ps(rx, mask));
-                fxyz[Y_OFF + i] += reduce(_mm256_and_ps(ry, mask));
-                fxyz[Z_OFF + i] += reduce(_mm256_and_ps(rz, mask));
+                __m256 mfr = _mm256_and_ps(fr, mask);
+                for (int k = 0; k < 8; k++) {
+                    float xj = rxyz[X_OFF + j + k];
+                    float yj = rxyz[Y_OFF + j + k];
+                    float zj = rxyz[Z_OFF + j + k];
+    
+                    // distancia mínima entre r_i y r_j
+                    float rx = xi - xj;
+                    rx = minimum_image(rx, L);
+                    float ry = yi - yj;
+                    ry = minimum_image(ry, L);
+                    float rz = zi - zj;
+                    rz = minimum_image(rz, L);
+        
+                    float rij2 = rx * rx + ry * ry + rz * rz;
+                    float sfr;
+                    if (rij2 <= rcut2) {
+                        float r2inv = 1.0f / rij2;
+                        float r6inv = r2inv * r2inv * r2inv;
+        
+                        sfr = 24.0f * r2inv * r6inv * (2.0f * r6inv - 1.0f);
+                    }
+                    else {
+                        sfr = 0.0f;
+                    }
+                    assert((fabs(sfr - mfr[k]) / max(1, fabs(mfr[k])) <= 1e-6));
+                }
+
+                fxyz[X_OFF + i] += reduce1(_mm256_and_ps(rx, mask));
+                fxyz[Y_OFF + i] += reduce1(_mm256_and_ps(ry, mask));
+                fxyz[Z_OFF + i] += reduce1(_mm256_and_ps(rz, mask));
 
                 xj = _mm256_sub_ps(xj, _mm256_and_ps(rx, mask));
                 _mm256_storeu_ps(&fxyz[X_OFF + j], xj);
@@ -214,10 +254,62 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 aux = _mm256_sub_ps(
                     _mm256_mul_ps(c4, _mm256_mul_ps(r6inv, _mm256_sub_ps(r6inv, c1))),
                     _mm256_set1_ps(ECUT));
-                *epot += reduce(_mm256_and_ps(mask, aux));
+                float epot1 = *epot;
+                *epot += reduce1(_mm256_and_ps(mask, aux));
+                aux = _mm256_and_ps(mask, aux);
+                // printf("Help:\n");
+                // for (int k = 0; k < 8; k++) {
+                    // printf("%f ", aux[k]);
+                // }
+                // printf("\n");
 
+                float s = reduce1(aux);
                 aux = _mm256_mul_ps(fr, rij2);
-                pres_vir += reduce(_mm256_and_ps(mask, aux));
+                float pres_vir1 = pres_vir;
+                pres_vir += reduce1(_mm256_and_ps(mask, aux));
+                float wth = 0.0f;
+                for (int k = 0; k < 8; k++) {
+                    float xj = rxyz[X_OFF + j + k];
+                    float yj = rxyz[Y_OFF + j + k];
+                    float zj = rxyz[Z_OFF + j + k];
+
+                    // distancia mínima entre r_i y r_j
+                    float rx = xi - xj;
+                    rx = minimum_image(rx, L);
+                    float ry = yi - yj;
+                    ry = minimum_image(ry, L);
+                    float rz = zi - zj;
+                    rz = minimum_image(rz, L);
+        
+                    float rij2 = rx * rx + ry * ry + rz * rz;
+                    float aux;
+                    if (rij2 <= rcut2) {
+                        float r2inv = 1.0f / rij2;
+                        float r6inv = r2inv * r2inv * r2inv;
+        
+                        float fr = 24.0f * r2inv * r6inv * (2.0f * r6inv - 1.0f);
+        
+                        fxyz[X_OFF + i] += fr * rx;
+                        fxyz[Y_OFF + i] += fr * ry;
+                        fxyz[Z_OFF + i] += fr * rz;
+        
+                        fxyz[X_OFF + j] -= fr * rx;
+                        fxyz[Y_OFF + j] -= fr * ry;
+                        fxyz[Z_OFF + j] -= fr * rz;
+        
+                        epot1 += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
+                        aux = 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
+                        pres_vir1 += fr * rij2;
+                    } else {
+                        aux = 0.0f;
+                    }
+                    // printf("%f ", aux);
+                    wth += aux;
+                }
+                // printf("\n");
+
+                // printf("%f %f\n", wth, s);
+                // printf("%f %f %f %f\n", *epot, epot1, pres_vir, pres_vir1);
                 
                 // omitir los siguientes 7 atomos
                 j += 7;
