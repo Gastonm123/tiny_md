@@ -140,6 +140,14 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     float rcut2 = RCUT * RCUT;
     *epot = 0.0f;
 
+    // constantes vectoriales
+    __m256 c1, c2, c4, c24, rcut2_256;
+    c24 = _mm256_set1_ps(24.0f);
+    c4 = _mm256_set1_ps(4.0f);
+    c2 = _mm256_set1_ps(2.0f);
+    c1 = _mm256_set1_ps(1.0f);
+    rcut2_256 = _mm256_set1_ps(rcut2);
+
     for (int i = 0; i < N - 1; ++i) {
 
         float xi = rxyz[X_OFF + i];
@@ -148,21 +156,21 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
 
         __m256 acc_fx, acc_fy, acc_fz, acc_epot, acc_pres_vir;
         acc_fx = acc_fy = acc_fz = acc_epot = acc_pres_vir = _mm256_setzero_ps();
-
+        
+        __m256 vxi, vyi, vzi;
+        vxi = _mm256_set1_ps(rxyz[X_OFF + i]);
+        vyi = _mm256_set1_ps(rxyz[Y_OFF + i]);
+        vzi = _mm256_set1_ps(rxyz[Z_OFF + i]);
+        
         for (int j = i + 1; j < N; ++j) {
 
             if (j + 7 < N) {
                 // calcular minima imagen rx, ry, rz
-                __m256 xj, yj, zj, vxi, vyi, vzi,
-                    rx, ry, rz;
+                __m256 xj, yj, zj, rx, ry, rz;
 
                 xj = _mm256_loadu_ps(&rxyz[X_OFF+j]);
                 yj = _mm256_loadu_ps(&rxyz[Y_OFF+j]);
                 zj = _mm256_loadu_ps(&rxyz[Z_OFF+j]);
-
-                vxi = _mm256_set1_ps(rxyz[X_OFF + i]);
-                vyi = _mm256_set1_ps(rxyz[Y_OFF + i]);
-                vzi = _mm256_set1_ps(rxyz[Z_OFF + i]);
 
                 rx = _mm256_sub_ps(vxi, xj);
                 ry = _mm256_sub_ps(vyi, yj);
@@ -173,15 +181,10 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 rz = minimum_image256(rz, L);
 
                 // calcular rij2, r2inv, r6inv, fr
-                __m256 rij2, c24, c4, c2, c1, r2inv, r6inv, fr;
+                __m256 rij2, r2inv, r6inv, fr;
                 rij2 = _mm256_add_ps(
                     _mm256_add_ps(_mm256_mul_ps(rx, rx), _mm256_mul_ps(ry, ry)),
                     _mm256_mul_ps(rz, rz));
-
-                c24 = _mm256_set1_ps(24.0f);
-                c4  = _mm256_set1_ps(4.0f);
-                c2  = _mm256_set1_ps(2.0f);
-                c1  = _mm256_set1_ps(1.0f);
 
                 r2inv = _mm256_div_ps(c1, rij2);
                 r6inv = _mm256_mul_ps(r2inv, _mm256_mul_ps(r2inv, r2inv));
@@ -191,7 +194,6 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 
                 // sumar fr * rx en el atomo i y restar en el atomo j
                 __m256 mask, fxj, fyj, fzj;
-                __m256 rcut2_256 = _mm256_set1_ps(rcut2);
                 mask = _mm256_cmp_ps(rij2, rcut2_256, _CMP_LE_OS);
                 rx = _mm256_mul_ps(fr, rx);
                 ry = _mm256_mul_ps(fr, ry);

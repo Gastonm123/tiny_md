@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define X_OFF 0
+#define Y_OFF N
+#define Z_OFF (2*N)
+
 // variables globales
 static float Ekin, Epot, Temp, Pres; // variables macroscopicas
 static float Rho, V, box_size, tail, Etail, Ptail;
@@ -103,10 +107,10 @@ static void draw_atoms(void)
     float dy;
     float dz;
 
-    for (di = 0; di < 3 * N; di += 3) {
-        dx = (rxyz[di + 0] / glL) * resize;
-        dy = (rxyz[di + N] / glL) * resize;
-        dz = (rxyz[di + 2*N] / glL) * resize;
+    for (di = 0; di < N; ++di) {
+        dx = (rxyz[X_OFF + di] / glL) * resize;
+        dy = (rxyz[Y_OFF + di] / glL) * resize;
+        dz = (rxyz[Z_OFF + di] / glL) * resize;
 
         glColor3d(0.0, 1.0, 0.0);
         glVertex3d(dx, dy, dz);
