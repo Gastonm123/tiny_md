@@ -5,7 +5,7 @@ LDFLAGS	= -lm
 
 TARGETS	= tiny_md viz
 SOURCES	= $(shell echo *.c)
-OBJECTS = core.o wtime.o
+OBJECTS = core.o wtime.o simd.o
 
 all: $(TARGETS)
 
@@ -17,6 +17,9 @@ tiny_md: tiny_md.o $(OBJECTS)
 
 %.o: %.c
 	$(CC) $(WFLAGS) $(CPPFLAGS) $(CFLAGS) -c $<
+
+simd: simd.ispc
+	ispc $(CFLAGS) -o $@ --target=avx2-i32x8
 
 clean:
 	rm -f $(TARGETS) *.o *.xyz *.log .depend

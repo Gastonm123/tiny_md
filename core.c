@@ -1,6 +1,10 @@
 #include "core.h"
 #include "parameters.h"
 
+#ifndef USE_ISPC
+#include "simd.h"
+#endif
+
 #include <math.h>
 #include <stdlib.h> // rand()
 #include <immintrin.h>
@@ -91,7 +95,8 @@ void init_vel(float* vxyz, float* temp, float* ekin)
     }
 }
 
-
+// manualmente incluyo esta flag para usar la version de ispc
+#ifndef USE_ISPC
 static float minimum_image(float cordi, const float cell_length)
 {
     // imagen más cercana
@@ -273,7 +278,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     pres_vir /= (V * 3.0f);
     *pres = *temp * rho + pres_vir;
 }
-
+#endif // ISPC
 
 static float pbc(float cordi, const float cell_length)
 {

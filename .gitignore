@@ -6,4 +6,4 @@ viz
 *.log
 *.xyz
 .depend
-
+.vscode

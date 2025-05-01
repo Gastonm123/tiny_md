@@ -8,15 +8,18 @@
 #ifndef PARAMETERS_H
 #define PARAMETERS_H
 
+#ifndef ISPC
 #include <time.h> // time(NULL)
-
+#endif
 
 #ifndef N // número de particulas (debe ser un 4m^3 para el cristal inicial)
 #define N 256
 #endif
 
+#ifndef ISPC
 #ifndef SEED // rand SEED para las velocidades
 #define SEED (time(NULL))
+#endif
 #endif
 
 #ifndef T0 // isoterma
