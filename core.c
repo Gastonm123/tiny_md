@@ -1,7 +1,8 @@
 #include "core.h"
 #include "parameters.h"
 
-#ifndef USE_ISPC
+#ifdef USE_ISPC
+// no hace falta
 #include "simd.h"
 #endif
 
@@ -283,11 +284,14 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
 static float pbc(float cordi, const float cell_length)
 {
     // condiciones periodicas de contorno coordenadas entre [0,L)
+    /*
     if (cordi <= 0.0f) {
         cordi += cell_length;
     } else if (cordi > cell_length) {
         cordi -= cell_length;
     }
+    */
+    cordi = fmodf(cordi + cell_length, cell_length);
     return cordi;
 }
 

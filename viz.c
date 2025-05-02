@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef USE_ISPC
+#include "simd.h"
+#endif
+
 #define X_OFF 0
 #define Y_OFF N
 #define Z_OFF (2*N)

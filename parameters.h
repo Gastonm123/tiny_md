@@ -18,7 +18,7 @@
 
 #ifndef ISPC
 #ifndef SEED // rand SEED para las velocidades
-#define SEED (time(NULL))
+#define SEED 0 // (time(NULL))
 #endif
 #endif
 

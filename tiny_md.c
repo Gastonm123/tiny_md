@@ -3,6 +3,10 @@
 #include "parameters.h"
 #include "wtime.h"
 
+#ifdef USE_ISPC
+#include "simd.h"
+#endif
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,7 +93,7 @@ int main(int argc, char **argv)
                 if (file_thermo && file_xyz) {
                     fprintf(file_thermo, "%f %f %f %f %f\n", t, Temp, Pres, Epot, Epot + Ekin);
                     fprintf(file_xyz, "%d\n\n", N);
-                    for (int k = 0; k < 3 * N; k += 3) {
+                    for (int k = 0; k < N; ++k) {
                         fprintf(file_xyz, "Ar %e %e %e\n", rxyz[k + 0], rxyz[k + N], rxyz[k + 2*N]);
                     }
                 }

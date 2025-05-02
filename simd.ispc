@@ -24,6 +24,8 @@ static float minimum_image(varying float cordi, uniform const float cell_length)
 // si no se accede a posiciones fuera de memoria en el codigo
 //  secuencial, el codigo paralelizado tampoco deberia, debido
 //  al uso de una mascara adecuada
+// los punteros a datos variables saltan de vector en vector, no
+//  se puede acceder a cada posicion individualmente
 // ===============================================================
 // la documentacion sugiere (pero no especifica) que una operacion
 //  sobre un tipo uniforme se realiza una sola vez. si no fuera asi,
@@ -37,7 +39,7 @@ export void forces(
 {
     // calcula las fuerzas LJ (12-6)
 
-    memset(fxyz, 0, 3 * 4 * N);
+    memset(fxyz, 0, 3 * N * 4);
 
     float lane_pres_vir = 0.0f;
     float lane_epot = 0.0f;
@@ -49,12 +51,12 @@ export void forces(
         uniform float yi = rxyz[Y_OFF + i];
         uniform float zi = rxyz[Z_OFF + i];
 
-        // per-lane acumulador de fuerzas para i
-        float fxi = fxyz[X_OFF + i];
-        float fyi = fxyz[Y_OFF + i];
-        float fzi = fxyz[Z_OFF + i];
+        float fxi = 0.0f;
+        float fyi = 0.0f;
+        float fzi = 0.0f;
 
         foreach (j = (i + 1) ... N) {
+
             float xj = rxyz[X_OFF + j];
             float yj = rxyz[Y_OFF + j];
             float zj = rxyz[Z_OFF + j];
@@ -69,12 +71,10 @@ export void forces(
 
             float rij2 = rx * rx + ry * ry + rz * rz;
 
-            /*
-            varying float fx[programCount], fy[programCount], fz[programCount];
-            packed_load_active(&fxyz[X_OFF + reduce_min(j)], &fx[0]);
-            packed_load_active(&fxyz[Y_OFF + reduce_min(j)], &fy[0]);
-            packed_load_active(&fxyz[Z_OFF + reduce_min(j)], &fz[0]);
-            */
+            // float fj[3];
+            // packed_load_active((uniform int * uniform)&fxyz[X_OFF + reduce_min(j)], (varying int * uniform)&fj[0]);
+            // packed_load_active((uniform int * uniform)&fxyz[Y_OFF + reduce_min(j)], (varying int * uniform)&fj[1]);
+            // packed_load_active((uniform int * uniform)&fxyz[Z_OFF + reduce_min(j)], (varying int * uniform)&fj[2]);
 
             if (rij2 <= rcut2) {
                 float r2inv = 1.0f / rij2;
@@ -82,22 +82,24 @@ export void forces(
 
                 float fr = 24.0f * r2inv * r6inv * (2.0f * r6inv - 1.0f);
 
-                /* straightforward: muchas llamadas a reduce
-                fxyz[X_OFF + i] += reduce_add(fr * rx);
-                fxyz[Y_OFF + i] += reduce_add(fr * ry);
-                fxyz[Z_OFF + i] += reduce_add(fr * rz);
-                */
+                fxyz[X_OFF + j] -= fr * rx;
+                fxyz[Y_OFF + j] -= fr * ry;
+                fxyz[Z_OFF + j] -= fr * rz;
+                // fj[0] -= fr * rx;
+                // fj[1] -= fr * ry;
+                // fj[2] -= fr * rz;
+
                 fxi += fr * rx;
                 fyi += fr * ry;
                 fzi += fr * rz;
 
-                fxyz[X_OFF + j] -= fr * rx;
-                fxyz[Y_OFF + j] -= fr * ry;
-                fxyz[Z_OFF + j] -= fr * rz;
-
                 lane_epot += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
                 lane_pres_vir += fr * rij2;
             }
+
+            // packed_store_active((uniform int * uniform)&fxyz[X_OFF + reduce_min(j)], (varying int)fj[0]);
+            // packed_store_active((uniform int * uniform)&fxyz[Y_OFF + reduce_min(j)], (varying int)fj[1]);
+            // packed_store_active((uniform int * uniform)&fxyz[Z_OFF + reduce_min(j)], (varying int)fj[2]);
         }
 
         fxyz[X_OFF + i] += reduce_add(fxi);
@@ -105,6 +107,9 @@ export void forces(
         fxyz[Z_OFF + i] += reduce_add(fzi);
     }
 
-    *epot += reduce_add(lane_epot);
-    *pres = *temp * rho + reduce_add(lane_pres_vir) / (V * 3.0f);
+    uniform float pres_vir = reduce_add(lane_pres_vir);
+    *epot = reduce_add(lane_epot);
+
+    pres_vir /= (V * 3.0f);
+    *pres = *temp * rho + pres_vir;
 }
