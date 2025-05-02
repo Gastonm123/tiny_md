@@ -71,11 +71,6 @@ export void forces(
 
             float rij2 = rx * rx + ry * ry + rz * rz;
 
-            // float fj[3];
-            // packed_load_active((uniform int * uniform)&fxyz[X_OFF + reduce_min(j)], (varying int * uniform)&fj[0]);
-            // packed_load_active((uniform int * uniform)&fxyz[Y_OFF + reduce_min(j)], (varying int * uniform)&fj[1]);
-            // packed_load_active((uniform int * uniform)&fxyz[Z_OFF + reduce_min(j)], (varying int * uniform)&fj[2]);
-
             if (rij2 <= rcut2) {
                 float r2inv = 1.0f / rij2;
                 float r6inv = r2inv * r2inv * r2inv;
@@ -85,9 +80,6 @@ export void forces(
                 fxyz[X_OFF + j] -= fr * rx;
                 fxyz[Y_OFF + j] -= fr * ry;
                 fxyz[Z_OFF + j] -= fr * rz;
-                // fj[0] -= fr * rx;
-                // fj[1] -= fr * ry;
-                // fj[2] -= fr * rz;
 
                 fxi += fr * rx;
                 fyi += fr * ry;
@@ -97,9 +89,6 @@ export void forces(
                 lane_pres_vir += fr * rij2;
             }
 
-            // packed_store_active((uniform int * uniform)&fxyz[X_OFF + reduce_min(j)], (varying int)fj[0]);
-            // packed_store_active((uniform int * uniform)&fxyz[Y_OFF + reduce_min(j)], (varying int)fj[1]);
-            // packed_store_active((uniform int * uniform)&fxyz[Z_OFF + reduce_min(j)], (varying int)fj[2]);
         }
 
         fxyz[X_OFF + i] += reduce_add(fxi);
