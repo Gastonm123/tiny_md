@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdlib.h> // rand()
 #include <immintrin.h>
+#include <stdio.h>
 
 #define ECUT (4.0f * (powf(RCUT, -12) - powf(RCUT, -6)))
 
@@ -163,7 +164,96 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
         vyi = _mm256_set1_ps(rxyz[Y_OFF + i]);
         vzi = _mm256_set1_ps(rxyz[Z_OFF + i]);
         
-        for (int j = 0; j < N; ++j) {
+        // fase uno
+        for (int j = 0; j < i; ++j) {
+
+            if (j + 7 < i) {
+                // calcular minima imagen rx, ry, rz
+                __m256 xj, yj, zj, rx, ry, rz;
+
+                xj = _mm256_loadu_ps(&rxyz[X_OFF+j]);
+                yj = _mm256_loadu_ps(&rxyz[Y_OFF+j]);
+                zj = _mm256_loadu_ps(&rxyz[Z_OFF+j]);
+
+                rx = _mm256_sub_ps(vxi, xj);
+                ry = _mm256_sub_ps(vyi, yj);
+                rz = _mm256_sub_ps(vzi, zj);
+
+                rx = minimum_image256(rx, L);
+                ry = minimum_image256(ry, L);
+                rz = minimum_image256(rz, L);
+
+                // calcular rij2, r2inv, r6inv, fr
+                __m256 rij2, r2inv, r6inv, fr;
+                rij2 = _mm256_add_ps(
+                    _mm256_add_ps(_mm256_mul_ps(rx, rx), _mm256_mul_ps(ry, ry)),
+                    _mm256_mul_ps(rz, rz));
+
+                r2inv = _mm256_div_ps(c1, rij2);
+                r6inv = _mm256_mul_ps(r2inv, _mm256_mul_ps(r2inv, r2inv));
+                fr = _mm256_mul_ps(
+                    _mm256_mul_ps(c24, _mm256_mul_ps(r2inv, r6inv)),
+                    _mm256_sub_ps(_mm256_mul_ps(c2, r6inv), c1));
+                
+                // sumar fr * rx en el atomo i sii idx != i
+                __m256 mask;
+                mask = _mm256_cmp_ps(rij2, rcut2_256, _CMP_LE_OS);
+
+                rx = _mm256_mul_ps(fr, rx);
+                ry = _mm256_mul_ps(fr, ry);
+                rz = _mm256_mul_ps(fr, rz);
+
+                acc_fx = _mm256_add_ps(acc_fx, _mm256_and_ps(rx, mask));
+                acc_fy = _mm256_add_ps(acc_fy, _mm256_and_ps(ry, mask));
+                acc_fz = _mm256_add_ps(acc_fz, _mm256_and_ps(rz, mask));
+
+                // actualizar epot y pres_vir
+                __m256 aux;
+                aux = _mm256_sub_ps(
+                    _mm256_mul_ps(c4, _mm256_mul_ps(r6inv, _mm256_sub_ps(r6inv, c1))),
+                    _mm256_set1_ps(ECUT));
+                acc_epot = _mm256_add_ps(acc_epot, _mm256_and_ps(mask, aux));
+
+                aux = _mm256_mul_ps(fr, rij2);
+                acc_pres_vir = _mm256_add_ps(acc_pres_vir, _mm256_and_ps(mask, aux));
+                
+                // omitir los siguientes 7 atomos
+                j += 7;
+            }
+            else {
+                float xj = rxyz[X_OFF + j];
+                float yj = rxyz[Y_OFF + j];
+                float zj = rxyz[Z_OFF + j];
+
+                // distancia mínima entre r_i y r_j
+                float rx = xi - xj;
+                rx = minimum_image(rx, L);
+                float ry = yi - yj;
+                ry = minimum_image(ry, L);
+                float rz = zi - zj;
+                rz = minimum_image(rz, L);
+    
+                float rij2 = rx * rx + ry * ry + rz * rz;
+    
+                if (rij2 <= rcut2) {
+                    float r2inv = 1.0f / rij2;
+                    float r6inv = r2inv * r2inv * r2inv;
+    
+                    float fr = 24.0f * r2inv * r6inv * (2.0f * r6inv - 1.0f);
+    
+                    fxyz[X_OFF + i] += fr * rx;
+                    fxyz[Y_OFF + i] += fr * ry;
+                    fxyz[Z_OFF + i] += fr * rz;
+    
+                    reduce_epot += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
+                    pres_vir += fr * rij2;
+                }
+            }
+
+        }
+        
+        // fase dos
+        for (int j = i+1; j < N; ++j) {
 
             if (j + 7 < N) {
                 // calcular minima imagen rx, ry, rz
@@ -194,13 +284,8 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                     _mm256_sub_ps(_mm256_mul_ps(c2, r6inv), c1));
                 
                 // sumar fr * rx en el atomo i sii idx != i
-                __m256 mask, ids;
+                __m256 mask;
                 mask = _mm256_cmp_ps(rij2, rcut2_256, _CMP_LE_OS);
-
-                for (int k = 0; k < 8; k++)
-                    ids[k] = j + k;
-
-                mask = _mm256_and_ps(mask, _mm256_cmp_ps(ids, _mm256_set1_ps(i), _CMP_NEQ_OS));
 
                 rx = _mm256_mul_ps(fr, rx);
                 ry = _mm256_mul_ps(fr, ry);
@@ -223,7 +308,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 // omitir los siguientes 7 atomos
                 j += 7;
             }
-            else if (j != i) {
+            else {
                 float xj = rxyz[X_OFF + j];
                 float yj = rxyz[Y_OFF + j];
                 float zj = rxyz[Z_OFF + j];
@@ -261,7 +346,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
         reduce_epot     += reduce(acc_epot);
         pres_vir        += reduce(acc_pres_vir);
     }
-    // NOTE:
+    
     // Se estan sumando dos veces la energia potencial de cada par de particulas, y la presion.
     // Dividimos por dos los valores finales para corregir.
     *epot = reduce_epot / 2.0f;
