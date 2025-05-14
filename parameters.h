@@ -9,6 +9,7 @@
 #define PARAMETERS_H
 
 #include <time.h> // time(NULL)
+#include <unistd.h> // sysconf
 
 
 #ifndef N // número de particulas (debe ser un 4m^3 para el cristal inicial)
@@ -16,7 +17,7 @@
 #endif
 
 #ifndef NT // número de hilos para la simulación
-#define NT 1
+#define NT ((int)sysconf(_SC_NPROCESSORS_ONLN)/2)
 #endif
 
 #ifndef SEED // rand SEED para las velocidades
