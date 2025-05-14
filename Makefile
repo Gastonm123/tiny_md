@@ -1,5 +1,7 @@
 CC      = gcc
-CFLAGS	= -O0
+VECTOR  = -ffast-math -march=native -ftree-vectorize
+OPENMP  = -fopenmp
+CFLAGS	= -O3 -flto -funroll-loops $(VECTOR) $(OPENMP) $(DEFINE)
 WFLAGS	= -std=c11 -Wall -Wextra -g
 LDFLAGS	= -lm
 
@@ -13,6 +15,9 @@ viz: viz.o $(OBJECTS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) -lGL -lGLU -lglut
 
 tiny_md: tiny_md.o $(OBJECTS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	
+tiny_md_omp: tiny_md_omp.o $(OBJECTS_OMP)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c

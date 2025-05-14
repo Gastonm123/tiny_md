@@ -15,6 +15,10 @@
 #define N 256
 #endif
 
+#ifndef NT // número de hilos para la simulación
+#define NT 1
+#endif
+
 #ifndef SEED // rand SEED para las velocidades
 #define SEED (time(NULL))
 #endif

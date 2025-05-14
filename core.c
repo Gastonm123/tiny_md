@@ -138,7 +138,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     }
     float pres_vir = 0.0f;
     float rcut2 = RCUT * RCUT;
-    *epot = 0.0f;
+    float reduce_epot = 0.0f;
 
     // constantes vectoriales
     __m256 c1, c2, c4, c24, rcut2_256;
@@ -148,7 +148,8 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     c1 = _mm256_set1_ps(1.0f);
     rcut2_256 = _mm256_set1_ps(rcut2);
 
-    for (int i = 0; i < N - 1; ++i) {
+    #pragma omp parallel for schedule(static) num_threads(NT) reduction(+:reduce_epot,pres_vir)
+    for (int i = 0; i < N; ++i) {
 
         float xi = rxyz[X_OFF + i];
         float yi = rxyz[Y_OFF + i];
@@ -162,7 +163,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
         vyi = _mm256_set1_ps(rxyz[Y_OFF + i]);
         vzi = _mm256_set1_ps(rxyz[Z_OFF + i]);
         
-        for (int j = i + 1; j < N; ++j) {
+        for (int j = 0; j < N; ++j) {
 
             if (j + 7 < N) {
                 // calcular minima imagen rx, ry, rz
@@ -192,9 +193,15 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                     _mm256_mul_ps(c24, _mm256_mul_ps(r2inv, r6inv)),
                     _mm256_sub_ps(_mm256_mul_ps(c2, r6inv), c1));
                 
-                // sumar fr * rx en el atomo i y restar en el atomo j
-                __m256 mask, fxj, fyj, fzj;
+                // sumar fr * rx en el atomo i sii idx != i
+                __m256 mask, ids;
                 mask = _mm256_cmp_ps(rij2, rcut2_256, _CMP_LE_OS);
+
+                for (int k = 0; k < 8; k++)
+                    ids[k] = j + k;
+
+                mask = _mm256_and_ps(mask, _mm256_cmp_ps(ids, _mm256_set1_ps(i), _CMP_NEQ_OS));
+
                 rx = _mm256_mul_ps(fr, rx);
                 ry = _mm256_mul_ps(fr, ry);
                 rz = _mm256_mul_ps(fr, rz);
@@ -202,18 +209,6 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 acc_fx = _mm256_add_ps(acc_fx, _mm256_and_ps(rx, mask));
                 acc_fy = _mm256_add_ps(acc_fy, _mm256_and_ps(ry, mask));
                 acc_fz = _mm256_add_ps(acc_fz, _mm256_and_ps(rz, mask));
-
-                fxj = _mm256_loadu_ps(&fxyz[X_OFF + j]);
-                fxj = _mm256_sub_ps(fxj, _mm256_and_ps(rx, mask));
-                _mm256_storeu_ps(&fxyz[X_OFF + j], fxj);
-
-                fyj = _mm256_loadu_ps(&fxyz[Y_OFF + j]);
-                fyj = _mm256_sub_ps(fyj, _mm256_and_ps(ry, mask));
-                _mm256_storeu_ps(&fxyz[Y_OFF + j], fyj);
-
-                fzj = _mm256_loadu_ps(&fxyz[Z_OFF + j]);
-                fzj = _mm256_sub_ps(fzj, _mm256_and_ps(rz, mask));
-                _mm256_storeu_ps(&fxyz[Z_OFF + j], fzj);
 
                 // actualizar epot y pres_vir
                 __m256 aux;
@@ -228,7 +223,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 // omitir los siguientes 7 atomos
                 j += 7;
             }
-            else {
+            else if (j != i) {
                 float xj = rxyz[X_OFF + j];
                 float yj = rxyz[Y_OFF + j];
                 float zj = rxyz[Z_OFF + j];
@@ -253,11 +248,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                     fxyz[Y_OFF + i] += fr * ry;
                     fxyz[Z_OFF + i] += fr * rz;
     
-                    fxyz[X_OFF + j] -= fr * rx;
-                    fxyz[Y_OFF + j] -= fr * ry;
-                    fxyz[Z_OFF + j] -= fr * rz;
-    
-                    *epot += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
+                    reduce_epot += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
                     pres_vir += fr * rij2;
                 }
             }
@@ -267,10 +258,14 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
         fxyz[X_OFF + i] += reduce(acc_fx);
         fxyz[Y_OFF + i] += reduce(acc_fy);
         fxyz[Z_OFF + i] += reduce(acc_fz);
-        *epot           += reduce(acc_epot);
+        reduce_epot     += reduce(acc_epot);
         pres_vir        += reduce(acc_pres_vir);
     }
-    pres_vir /= (V * 3.0f);
+    // NOTE:
+    // Se estan sumando dos veces la energia potencial de cada par de particulas, y la presion.
+    // Dividimos por dos los valores finales para corregir.
+    *epot = reduce_epot / 2.0f;
+    pres_vir /= (V * 6.0f);
     *pres = *temp * rho + pres_vir;
 }
 
