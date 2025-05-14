@@ -120,7 +120,7 @@ static __m256 minimum_image256(__m256 cordi, const float cell_length)
     return cordi;
 }
 
-static float reduce(__m256 v)
+static float reduce_sum(__m256 v)
 {
     // suma horizontal del vector
 	__m256 psum = _mm256_hadd_ps(_mm256_hadd_ps(v,v), _mm256_hadd_ps(v,v));
@@ -340,11 +340,13 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
 
         }
 
-        fxyz[X_OFF + i] += reduce(acc_fx);
-        fxyz[Y_OFF + i] += reduce(acc_fy);
-        fxyz[Z_OFF + i] += reduce(acc_fz);
-        reduce_epot     += reduce(acc_epot);
-        pres_vir        += reduce(acc_pres_vir);
+        // suma de los valores de fueza, energia potencial y presion
+        // acumulados para la particula actual
+        fxyz[X_OFF + i] += reduce_sum(acc_fx);
+        fxyz[Y_OFF + i] += reduce_sum(acc_fy);
+        fxyz[Z_OFF + i] += reduce_sum(acc_fz);
+        reduce_epot     += reduce_sum(acc_epot);
+        pres_vir        += reduce_sum(acc_pres_vir);
     }
     
     // Se estan sumando dos veces la energia potencial de cada par de particulas, y la presion.
