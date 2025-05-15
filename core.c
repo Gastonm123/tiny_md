@@ -164,7 +164,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
         vyi = _mm256_set1_ps(rxyz[Y_OFF + i]);
         vzi = _mm256_set1_ps(rxyz[Z_OFF + i]);
         
-        // fase uno
+        // fase uno, no suman la energia potencial ni la presion
         for (int j = 0; j < i; ++j) {
 
             if (j + 7 < i) {
@@ -206,16 +206,6 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 acc_fx = _mm256_add_ps(acc_fx, _mm256_and_ps(rx, mask));
                 acc_fy = _mm256_add_ps(acc_fy, _mm256_and_ps(ry, mask));
                 acc_fz = _mm256_add_ps(acc_fz, _mm256_and_ps(rz, mask));
-
-                // actualizar epot y pres_vir
-                __m256 aux;
-                aux = _mm256_sub_ps(
-                    _mm256_mul_ps(c4, _mm256_mul_ps(r6inv, _mm256_sub_ps(r6inv, c1))),
-                    _mm256_set1_ps(ECUT));
-                acc_epot = _mm256_add_ps(acc_epot, _mm256_and_ps(mask, aux));
-
-                aux = _mm256_mul_ps(fr, rij2);
-                acc_pres_vir = _mm256_add_ps(acc_pres_vir, _mm256_and_ps(mask, aux));
                 
                 // omitir los siguientes 7 atomos
                 j += 7;
@@ -244,9 +234,6 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                     fxyz[X_OFF + i] += fr * rx;
                     fxyz[Y_OFF + i] += fr * ry;
                     fxyz[Z_OFF + i] += fr * rz;
-    
-                    reduce_epot += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
-                    pres_vir += fr * rij2;
                 }
             }
 
@@ -349,10 +336,8 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
         pres_vir        += reduce_sum(acc_pres_vir);
     }
     
-    // Se estan sumando dos veces la energia potencial de cada par de particulas, y la presion.
-    // Dividimos por dos los valores finales para corregir.
-    *epot = reduce_epot / 2.0f;
-    pres_vir /= (V * 6.0f);
+    *epot = reduce_epot;
+    pres_vir /= (V * 3.0f);
     *pres = *temp * rho + pres_vir;
 }
 
