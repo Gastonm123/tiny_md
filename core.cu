@@ -5,12 +5,15 @@
 #include <stdlib.h> // rand()
 #include <stdio.h>
 #include <omp.h>
+#include <cuda_runtime.h>
 
 #define DIV_CEIL(a,b) (((a)+(b)-1)/(b))
 #define ECUT (4.0f * (powf(RCUT, -12) - powf(RCUT, -6)))
 #define X_OFF 0
 #define Y_OFF N
 #define Z_OFF (2*N)
+#define BLOCK_SIZE 1024
+const int STUFFED_N = N-N%BLOCK_SIZE+BLOCK_SIZE;
 
 static inline int myrand(int *state) {
     int x = *state;
@@ -104,51 +107,101 @@ __device__ float minimum_image(float cordi, const float cell_length)
     return cordi;
 }
 
+__device__ void suma(float *dst, float x)
+{
+    __shared__ float suma_par;
+
+    size_t tid  = threadIdx.x;		// thread id, dentro del bloque
+    size_t lid  = tid%warpSize;		// lane id, dentro del warp
+
+    // Fase 1, inicialización
+    if (tid==0)
+    	suma_par = 0.0f;
+    __syncthreads();
+
+    // Fase 2, cómputo dentro del bloque
+    float warp_reduce = x; //((__activemask()>>lid)&1) * x;
+
+    // Fase 2.1, suma en warp
+    int mask = __activemask();
+    warp_reduce += __shfl_down_sync(mask, warp_reduce, 16);
+    warp_reduce += __shfl_down_sync(mask, warp_reduce, 8);
+    warp_reduce += __shfl_down_sync(mask, warp_reduce, 4);
+    warp_reduce += __shfl_down_sync(mask, warp_reduce, 2);
+    warp_reduce += __shfl_down_sync(mask, warp_reduce, 1);
+
+    // Fase 2.2, acumulacion a shared
+    int first_active_lane = __ffs(mask) - 1;
+    if (lid==first_active_lane) {
+	    atomicAdd(&suma_par, warp_reduce);
+    }
+    __syncthreads();
+
+    // Fase 3, acumulación del resultado local del bloque en la global
+    if (tid==0)
+    	atomicAdd(dst, suma_par);
+}
+
 __global__ void forces_naive(const float *rxyz, float *fxyz, float *epot, float *pres,
-                             const float L) 
+                             const float L, const float rcut2) 
 {
 	// int tid = threadIdx.x;
 	// int lane = tid % warpSize;
 	int gtid = blockIdx.x * blockDim.x + threadIdx.x;
+    /*
+    int i = 0;
+    while (i < N && gtid >= N-(i+1)) {
+        gtid -= N-(i+1);
+        i++;
+    }
 
-    if (gtid >= N)
+    if (i == N)
         return;
+    
+    int j = gtid + 1;
+    */
 
-    const float rcut2 = RCUT * RCUT;
-    float xi = rxyz[X_OFF + gtid];
-    float yi = rxyz[Y_OFF + gtid];
-    float zi = rxyz[Z_OFF + gtid];
+    int i = gtid / STUFFED_N;
+    int j = gtid % STUFFED_N;
 
-    for (int j = 0 ; j < N; j++) {
-        if (j == gtid) continue;
+    if (i >= N || j >= N || i == j) return;
 
-        float xj = rxyz[X_OFF + j];
-        float yj = rxyz[Y_OFF + j];
-        float zj = rxyz[Z_OFF + j];
+    float xi = rxyz[X_OFF + i];
+    float yi = rxyz[Y_OFF + i];
+    float zi = rxyz[Z_OFF + i];
 
-        // distancia mínima entre r_i y r_j
-        float rx = xi - xj;
-        rx = minimum_image(rx, L);
-        float ry = yi - yj;
-        ry = minimum_image(ry, L);
-        float rz = zi - zj;
-        rz = minimum_image(rz, L);
+    float xj = rxyz[X_OFF + j];
+    float yj = rxyz[Y_OFF + j];
+    float zj = rxyz[Z_OFF + j];
 
-        float rij2 = rx * rx + ry * ry + rz * rz;
+    // distancia mínima entre r_i y r_j
+    float rx = minimum_image(xi - xj, L);
+    float ry = minimum_image(yi - yj, L);
+    float rz = minimum_image(zi - zj, L);
 
-        if (rij2 <= rcut2) {
-            float r2inv = 1.0f / rij2;
-            float r6inv = r2inv * r2inv * r2inv;
+    float rij2 = rx * rx + ry * ry + rz * rz;
 
-            float fr = 24.0f * r2inv * r6inv * (2.0f * r6inv - 1.0f);
+    if (rij2 <= rcut2) {
+        float r2inv = 1.0f / rij2;
+        float r6inv = r2inv * r2inv * r2inv;
 
-            fxyz[X_OFF + gtid] += fr * rx;
-            fxyz[Y_OFF + gtid] += fr * ry;
-            fxyz[Z_OFF + gtid] += fr * rz;
+        float fr = 24.0f * r2inv * r6inv * (2.0f * r6inv - 1.0f);
 
-            atomicAdd(epot, 4.0f * r6inv * (r6inv - 1.0f) - ECUT);
-            atomicAdd(pres, fr * rij2);
-        }
+        suma(&fxyz[X_OFF + i], fr * rx);
+        suma(&fxyz[Y_OFF + i], fr * ry);
+        suma(&fxyz[Z_OFF + i], fr * rz);
+
+        /*
+        atomicAdd(&fxyz[X_OFF + j], -fr * rx);
+        atomicAdd(&fxyz[Y_OFF + j], -fr * ry);
+        atomicAdd(&fxyz[Z_OFF + j], -fr * rz);
+
+        fxyz[X_OFF + i] += fr * rx; 
+        fxyz[Y_OFF + i] += fr * ry; 
+        fxyz[Z_OFF + i] += fr * rz; 
+        */
+        suma(epot, (4.0f * r6inv * (r6inv - 1.0f) - ECUT));
+        suma(pres, (fr * rij2));
     }
 }
 
@@ -163,8 +216,10 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
         fxyz[i + 2] = 0.0f;
     }
     float pres_vir;
+    const float rcut2 = RCUT * RCUT;
 
-    const int BLOCK_SIZE = 1024;
+    //const int BLOCK_COUNT = DIV_CEIL(N*(N-1)/2, BLOCK_SIZE);
+    const int BLOCK_COUNT = STUFFED_N*N/BLOCK_SIZE;
     
     float *d_rxyz = NULL, *d_fxyz = NULL, *d_epot = NULL, *d_pres = NULL;
     const int ARRAY_SIZE = 3 * N * sizeof(float);
@@ -175,8 +230,14 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
 
     cudaMemcpy(d_rxyz, rxyz, ARRAY_SIZE, cudaMemcpyHostToDevice);
     cudaMemcpy(d_fxyz, fxyz, ARRAY_SIZE, cudaMemcpyHostToDevice);
+    // cudaDeviceSynchronize();
 
-    forces_naive<<<BLOCK_SIZE,DIV_CEIL(N,BLOCK_SIZE)>>>(d_rxyz, d_fxyz, d_epot, d_pres, L);
+    forces_naive<<<BLOCK_COUNT,BLOCK_SIZE>>>(d_rxyz, d_fxyz, d_epot, d_pres, L, rcut2);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "Error en kernel: %s\n", cudaGetErrorString(err));
+    }
+
     cudaDeviceSynchronize();
 
     cudaMemcpy(fxyz, d_fxyz, ARRAY_SIZE, cudaMemcpyDeviceToHost);
@@ -186,7 +247,8 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     // presion y energia potencial se cuentan dos veces
     
     *epot /= 2.0f;
-    pres_vir /= (V * 6.0f);
+    pres_vir /= 2.0f;
+    pres_vir /= (V * 3.0f);
     *pres = *temp * rho + pres_vir;
 }
 
