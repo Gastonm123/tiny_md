@@ -5,6 +5,7 @@
 #include <stdlib.h> // rand()
 #include <immintrin.h>
 #include <stdio.h>
+#include <omp.h>
 
 #define ECUT (4.0f * (powf(RCUT, -12) - powf(RCUT, -6)))
 
@@ -139,7 +140,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     }
     float pres_vir = 0.0f;
     float rcut2 = RCUT * RCUT;
-    float reduce_epot = 0.0f;
+    *epot = 0.0f;
 
     // constantes vectoriales
     __m256 c1, c2, c4, c24, rcut2_256;
@@ -149,15 +150,19 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     c1 = _mm256_set1_ps(1.0f);
     rcut2_256 = _mm256_set1_ps(rcut2);
 
-    #pragma omp parallel for schedule(static) num_threads(NT) reduction(+:reduce_epot,pres_vir)
+    __m256 acc_epot = _mm256_setzero_ps();
+    __m256 acc_pres = _mm256_setzero_ps();
+
+    #pragma omp declare reduction(_mm256_add_ps:__m256:omp_out=_mm256_add_ps(omp_out, omp_in))
+    #pragma omp parallel for schedule(static) num_threads(NT) reduction(_mm256_add_ps:acc_epot,acc_pres)
     for (int i = 0; i < N; ++i) {
 
         float xi = rxyz[X_OFF + i];
         float yi = rxyz[Y_OFF + i];
         float zi = rxyz[Z_OFF + i];
 
-        __m256 acc_fx, acc_fy, acc_fz, acc_epot, acc_pres_vir;
-        acc_fx = acc_fy = acc_fz = acc_epot = acc_pres_vir = _mm256_setzero_ps();
+        __m256 acc_fx, acc_fy, acc_fz;
+        acc_fx = acc_fy = acc_fz = _mm256_setzero_ps();
         
         __m256 vxi, vyi, vzi;
         vxi = _mm256_set1_ps(rxyz[X_OFF + i]);
@@ -290,7 +295,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                 acc_epot = _mm256_add_ps(acc_epot, _mm256_and_ps(mask, aux));
 
                 aux = _mm256_mul_ps(fr, rij2);
-                acc_pres_vir = _mm256_add_ps(acc_pres_vir, _mm256_and_ps(mask, aux));
+                acc_pres = _mm256_add_ps(acc_pres, _mm256_and_ps(mask, aux));
                 
                 // omitir los siguientes 7 atomos
                 j += 7;
@@ -320,23 +325,22 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
                     fxyz[Y_OFF + i] += fr * ry;
                     fxyz[Z_OFF + i] += fr * rz;
     
-                    reduce_epot += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
-                    pres_vir += fr * rij2;
+                    acc_epot[0] += 4.0f * r6inv * (r6inv - 1.0f) - ECUT;
+                    acc_pres[0] += fr * rij2;
                 }
             }
 
         }
 
-        // suma de los valores de fueza, energia potencial y presion
-        // acumulados para la particula actual
+        // suma de los valores de fueza, acumulados para la particula actual
         fxyz[X_OFF + i] += reduce_sum(acc_fx);
         fxyz[Y_OFF + i] += reduce_sum(acc_fy);
         fxyz[Z_OFF + i] += reduce_sum(acc_fz);
-        reduce_epot     += reduce_sum(acc_epot);
-        pres_vir        += reduce_sum(acc_pres_vir);
     }
     
-    *epot = reduce_epot;
+    *epot    = reduce_sum(acc_epot);
+    pres_vir = reduce_sum(acc_pres);
+
     pres_vir /= (V * 3.0f);
     *pres = *temp * rho + pres_vir;
 }
