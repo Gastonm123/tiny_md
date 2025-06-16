@@ -13,8 +13,6 @@
 #define Y_OFF N
 #define Z_OFF (2*N)
 #define BLOCK_SIZE 1024
-#define NLANES (BLOCK_SIZE/32)
-// const int STUFFED_N = N-N%BLOCK_SIZE+BLOCK_SIZE;
 
 static inline int myrand(int *state) {
     int x = *state;
@@ -108,18 +106,11 @@ __device__ float minimum_image(float cordi, const float cell_length)
     return cordi;
 }
 
-#define DO_LINEAL_SUM    0
-#define DO_PARALLEL_SUM  1
-#define DO_ATOMIC_SUM    0
-
 __device__ void sumaBlock(float *dst, float x)
 {
-    __shared__ float suma_lanes[NLANES];
-
     size_t tid  = threadIdx.x;		// thread id, dentro del bloque
     size_t lid  = tid%warpSize;		// lane id, dentro del warp
-    size_t lane = tid/warpSize;     // lane number
-
+    
     // Fase 2, cómputo dentro del bloque
     float warp_reduce = x;
 
@@ -130,69 +121,18 @@ __device__ void sumaBlock(float *dst, float x)
     warp_reduce += __shfl_down_sync(FULL_MASK, warp_reduce, 4);
     warp_reduce += __shfl_down_sync(FULL_MASK, warp_reduce, 2);
     warp_reduce += __shfl_down_sync(FULL_MASK, warp_reduce, 1);
-
-    // Fase 2.2, acumulacion de lanes
-    if (DO_LINEAL_SUM) {
-        if (lid == 0) {
-            suma_lanes[lane] = warp_reduce;
-            __syncthreads();
     
-            if (tid==0) {
-                for (int i = 0; i < NLANES; ++i) {
-                    *dst += suma_lanes[lane];
-                }
-            }
-        }
-    } else if (DO_PARALLEL_SUM) {
-        if (lid == 0) {
-            suma_lanes[lane] = warp_reduce;
-            __syncthreads();
-    
-            for (int step = BLOCK_SIZE/warpSize/2; step >= 1; step /= 2) {
-                if (lane < step) {
-                    suma_lanes[lane] += suma_lanes[lane + step];
-                }
-                __syncthreads();
-            }
-
-            if (tid == 0) {
-                *dst = suma_lanes[0];
-            }
-        }
-
-    } else if (DO_ATOMIC_SUM) {
-        if (lid==0)
-            atomicAdd(dst, warp_reduce);
-    }
-
-
-    /*
-    if (lid==0) {
-        suma_lanes[lane] = warp_reduce;
-        for (int step = BLOCK_SIZE/warpSize/2; step >= 1; step /= 2) {
-            if (lane < step) {
-                suma_lanes[lane] += suma_lanes[lane + step];
-            }
-            __syncthreads();
-        }
-    }
-    __syncthreads();
-
-    // Fase 3, acumulación del resultado local del bloque en la global
-    if (tid == 0) 
-        *dst = suma_lanes[0];
-    */
+    if (lid==0)
+        atomicAdd(dst, warp_reduce);
 }
-
-#define DO_WRITE 1
 
 __global__ void forces_naive(const float *rxyz, float *fxyz, float *epot, float *pres,
                              const float L, const float rcut2) 
 {
 	// int tid = threadIdx.x;
 	// int lane = tid % warpSize;
-    int i = blockIdx.x;
     int tid = threadIdx.x;
+    int i = blockIdx.x;
 
     float xi = rxyz[X_OFF + i];
     float yi = rxyz[Y_OFF + i];
@@ -234,23 +174,11 @@ __global__ void forces_naive(const float *rxyz, float *fxyz, float *epot, float 
     }
 
     // atomicAdd(&fxyz[X_OFF + i], local_fx);
-    if (DO_WRITE) {
-        __shared__ float block_epot, block_pres;
-        if (tid == 0) {
-            block_epot = 0.0f;
-            block_pres = 0.0f;
-        }
-        __syncthreads();
-
-        sumaBlock(&fxyz[X_OFF+i], local_fx);
-        sumaBlock(&fxyz[Y_OFF+i], local_fy);
-        sumaBlock(&fxyz[Z_OFF+i], local_fz);
-        sumaBlock(&block_epot, local_epot);
-        sumaBlock(&block_pres, local_pres);
-
-        atomicAdd(epot, block_epot);
-        atomicAdd(pres, block_pres);
-    }
+    sumaBlock(&fxyz[X_OFF+i], local_fx);
+    sumaBlock(&fxyz[Y_OFF+i], local_fy);
+    sumaBlock(&fxyz[Z_OFF+i], local_fz);
+    sumaBlock(epot, local_epot);
+    sumaBlock(pres, local_pres);
 }
 
 void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
@@ -291,6 +219,11 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     cudaMemcpy(fxyz, d_fxyz, ARRAY_SIZE, cudaMemcpyDeviceToHost);
     cudaMemcpy(epot, d_epot, sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(&pres_vir, d_pres, sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_fxyz);
+    cudaFree(d_rxyz);
+    cudaFree(d_epot);
+    cudaFree(d_pres);
 
     // presion y energia potencial se cuentan dos veces
     
