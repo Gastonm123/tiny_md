@@ -105,7 +105,8 @@ int main(int argc, char **argv)
     printf("# Tiempo simulado = %f [fs]\n", t * 1.6);
 
     // printf("# Nanosegundos por op = %f\n", (elapsed * 1e9) / );
-    printf("# Interacciones por microsegundo = %f\n", ((long long)10*N*N*TRUN) / (elapsed * 1e6));
+    // printf("# Interacciones por microsegundo = %f\n", ((long long)10*N*N*TRUN) / (elapsed * 1e6));
+    printf("# Interacciones por milisegundo = %f\n", ((long long)N*N) / (elapsed * 1e6));
 
     if (file_thermo && file_xyz) {
         // Cierre de archivos

@@ -20,6 +20,10 @@
 #define NT ((int)sysconf(_SC_NPROCESSORS_ONLN)/2)
 #endif
 
+#ifndef BLOCK_CUDA
+#define BLOCK_CUDA 1024
+#endif
+
 #ifndef SEED // rand SEED para las velocidades
 #define SEED (time(NULL))
 #endif

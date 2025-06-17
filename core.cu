@@ -12,7 +12,8 @@
 #define X_OFF 0
 #define Y_OFF N
 #define Z_OFF (2*N)
-#define BLOCK_SIZE 1024
+#define WARP_SIZE 32
+#define WARPS_PER_BLOCK (BLOCK_CUDA/WARP_SIZE)
 
 static inline int myrand(int *state) {
     int x = *state;
@@ -129,10 +130,11 @@ __device__ void sumaBlock(float *dst, float x)
 __global__ void forces_naive(const float *rxyz, float *fxyz, float *epot, float *pres,
                              const float L, const float rcut2) 
 {
-	// int tid = threadIdx.x;
-	// int lane = tid % warpSize;
+    // int tid = threadIdx.x;
     int tid = threadIdx.x;
-    int i = blockIdx.x;
+    int lane = tid / warpSize;
+    int lid = tid % warpSize;
+    int i = WARPS_PER_BLOCK * blockIdx.x + lane;
 
     float xi = rxyz[X_OFF + i];
     float yi = rxyz[Y_OFF + i];
@@ -144,12 +146,13 @@ __global__ void forces_naive(const float *rxyz, float *fxyz, float *epot, float 
     float local_epot = 0.0f;
     float local_pres = 0.0f;
 
-    for (int j = 0; j < N; j += BLOCK_SIZE) {
-        if (j + tid >= N || j + tid == i) continue;
 
-        float xj = rxyz[X_OFF + j + tid];
-        float yj = rxyz[Y_OFF + j + tid];
-        float zj = rxyz[Z_OFF + j + tid];
+    for (int j = 0; j < N; j += WARP_SIZE) {
+        if (j + lid >= N || j + lid == i) continue;
+
+        float xj = rxyz[X_OFF + j + lid];
+        float yj = rxyz[Y_OFF + j + lid];
+        float zj = rxyz[Z_OFF + j + lid];
         
         // distancia mínima entre r_i y r_j
         float rx = minimum_image(xi - xj, L);
@@ -194,8 +197,7 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
     float pres_vir;
     const float rcut2 = RCUT * RCUT;
 
-    //const int BLOCK_COUNT = DIV_CEIL(N*(N-1)/2, BLOCK_SIZE);
-    const int BLOCK_COUNT = N;
+    const int BLOCK_COUNT = N / WARPS_PER_BLOCK; // 1 WARP por cada particula
     
     float *d_rxyz = NULL, *d_fxyz = NULL, *d_epot = NULL, *d_pres = NULL;
     const int ARRAY_SIZE = 3 * N * sizeof(float);
@@ -206,9 +208,8 @@ void forces(const float* rxyz, float* fxyz, float* epot, float* pres,
 
     cudaMemcpy(d_rxyz, rxyz, ARRAY_SIZE, cudaMemcpyHostToDevice);
     cudaMemcpy(d_fxyz, fxyz, ARRAY_SIZE, cudaMemcpyHostToDevice);
-    // cudaDeviceSynchronize();
 
-    forces_naive<<<BLOCK_COUNT,BLOCK_SIZE>>>(d_rxyz, d_fxyz, d_epot, d_pres, L, rcut2);
+    forces_naive<<<BLOCK_COUNT,BLOCK_CUDA>>>(d_rxyz, d_fxyz, d_epot, d_pres, L, rcut2);
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         fprintf(stderr, "Error en kernel: %s\n", cudaGetErrorString(err));
